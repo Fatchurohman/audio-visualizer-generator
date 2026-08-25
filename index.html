@@ -1,1 +1,71 @@
-coba
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Visualizer & Short Video Generator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <h1>Audio Visualizer Generator</h1>
+      <p>Buat video visualizer 9:16 siap ekspor untuk Shorts/Reels/TikTok</p>
+    </header>
+
+    <main class="main-content">
+      <!-- Panel Kontrol Input -->
+      <section class="control-panel">
+        <div class="form-group">
+          <label for="audioInput">1. Pilih Audio (MP3/WAV)</label>
+          <input type="file" id="audioInput" accept="audio/*">
+        </div>
+
+        <div class="form-group">
+          <label for="bgInput">2. Pilih Background Image (Opsional)</label>
+          <input type="file" id="bgInput" accept="image/*">
+        </div>
+
+        <div class="form-group">
+          <label for="trackTitle">3. Judul Lagu</label>
+          <input type="text" id="trackTitle" placeholder="Contoh: Laila Majnun">
+        </div>
+
+        <div class="form-group">
+          <label for="artistName">4. Nama Artis</label>
+          <input type="text" id="artistName" placeholder="Contoh: fatur-music">
+        </div>
+
+        <div class="form-group">
+          <label for="visualStyle">5. Gaya Visualizer</label>
+          <select id="visualStyle">
+            <option value="bars">Waveform Bars</option>
+            <option value="circle">Neon Circular Pulse</option>
+          </select>
+        </div>
+
+        <div class="action-buttons">
+          <button id="btnPlay" class="btn btn-primary" disabled>Play & Preview</button>
+          <button id="btnPause" class="btn btn-secondary" disabled>Pause</button>
+          <button id="btnRecord" class="btn btn-record" disabled>Mulai Rekam Video</button>
+          <button id="btnStopRecord" class="btn btn-stop" disabled>Selesai & Unduh Video</button>
+        </div>
+
+        <div id="statusMessage" class="status-box">Pilih file audio untuk memulai preview.</div>
+      </section>
+
+      <!-- Panel Preview Canvas (Rasio 9:16) -->
+      <section class="preview-panel">
+        <div class="canvas-wrapper">
+          <canvas id="visualizerCanvas" width="1080" height="1920"></canvas>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <audio id="audioElement" crossorigin="anonymous"></audio>
+
+  <script type="module" src="js/audio.js"></script>
+</body>
+</html>
+
