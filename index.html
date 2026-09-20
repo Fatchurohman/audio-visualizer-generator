@@ -1,86 +1,494 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Audio Visualizer & Short Video Generator</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <div class="app-container">
-    <header class="app-header">
-      <h1>Audio Visualizer Generator</h1>
-      <p>Buat video visualizer 9:16 siap ekspor untuk Shorts/Reels/TikTok</p>
-      
-      <div class="app-identity">
-        <span class="status-dot"></span>
-        <span class="identity-text">developer:fatur62</span>
-      </div>
-    </header>
+// js/audio.js
 
-    <main class="main-content">
-      <!-- Panel Kontrol Input -->
-      <section class="control-panel">
-        <div class="form-group">
-          <label for="audioInput">1. Pilih Audio (MP3/WAV)</label>
-          <input type="file" id="audioInput" accept="audio/*">
-        </div>
+const canvas = document.getElementById('visualizerCanvas');
+const ctx = canvas.getContext('2d');
 
-        <div class="form-group">
-          <label for="bgInput">2. Pilih Background Image (Opsional)</label>
-          <input type="file" id="bgInput" accept="image/*">
-        </div>
+const audioElement = document.getElementById('audioElement');
+const audioInput = document.getElementById('audioInput');
+const bgInput = document.getElementById('bgInput');
+const trackTitleInput = document.getElementById('trackTitle');
+const artistNameInput = document.getElementById('artistName');
+const visualStyleSelect = document.getElementById('visualStyle');
 
-        <div class="form-group">
-          <label for="trackTitle">3. Judul Lagu</label>
-          <input type="text" id="trackTitle" placeholder="Contoh: Laila Majnun">
-        </div>
+const btnPlay = document.getElementById('btnPlay');
+const btnPause = document.getElementById('btnPause');
+const btnRecord = document.getElementById('btnRecord');
+const btnStopRecord = document.getElementById('btnStopRecord');
+const statusMessage = document.getElementById('statusMessage');
 
-        <div class="form-group">
-          <label for="artistName">4. Nama Artis</label>
-          <input type="text" id="artistName" placeholder="Contoh: fatur-music">
-        </div>
+let audioCtx = null;
+let analyser = null;
+let sourceNode = null;
+let dataArray = null;
+let animationFrameId = null;
 
-        <div class="form-group">
-          <label for="visualStyle">5. Gaya Visualizer</label>
-          <select id="visualStyle">
-            <!-- Gaya Bawaan -->
-            <option value="bars">Waveform Bars</option>
-            <option value="circle">Neon Circular Pulse</option>
-            <option value="radial">Radial Sunburst</option>
-            <option value="wave">Smooth Wave Spectrum</option>
-            <option value="particles">Floating Particles</option>
-            
-            <!-- 5 Gaya Baru -->
-            <option value="bars-mirrored">Symmetrical Dual Spectrum</option>
-            <option value="center-ring">Concentric Pulse Rings</option>
-            <option value="laser-grid">Cyberpunk Laser Grid</option>
-            <option value="dna-helix">Biomorphic DNA Strand</option>
-            <option value="matrix-rain">Digital Rain Equalizer</option>
-          </select>
-        </div>
+let bgImage = null;
+let mediaRecorder = null;
+let recordedChunks = [];
 
-        <div class="action-buttons">
-          <button id="btnPlay" class="btn btn-primary" disabled>Play & Preview</button>
-          <button id="btnPause" class="btn btn-secondary" disabled>Pause</button>
-          <button id="btnRecord" class="btn btn-record" disabled>Mulai Rekam Video</button>
-          <button id="btnStopRecord" class="btn btn-stop" disabled>Selesai & Unduh Video</button>
-        </div>
+// Data Rain Matrix (Khas untuk gaya matrix-rain)
+const matrixColumns = 30;
+const matrixDrops = new Array(matrixColumns).fill(0);
 
-        <div id="statusMessage" class="status-box">Pilih file audio untuk memulai preview.</div>
-      </section>
+// Data Partikel
+const particles = Array.from({ length: 60 }, () => ({
+  x: Math.random() * canvas.width,
+  y: Math.random() * canvas.height,
+  size: Math.random() * 5 + 2,
+  speedY: Math.random() * 2 + 1
+}));
 
-      <!-- Panel Preview Canvas (Rasio 9:16) -->
-      <section class="preview-panel">
-        <div class="canvas-wrapper">
-          <canvas id="visualizerCanvas" width="1080" height="1920"></canvas>
-        </div>
-      </section>
-    </main>
-  </div>
+// Initial Canvas Draw
+drawDefaultCanvas();
 
-  <audio id="audioElement" crossorigin="anonymous"></audio>
+// Event Listeners
+audioInput.addEventListener('change', handleAudioUpload);
+bgInput.addEventListener('change', handleBgUpload);
+btnPlay.addEventListener('click', playAudio);
+btnPause.addEventListener('click', pauseAudio);
+btnRecord.addEventListener('click', startRecording);
+btnStopRecord.addEventListener('click', stopRecording);
 
-  <script type="module" src="js/audio.js"></script>
-</body>
-</html>
+function initAudioContext() {
+  if (!audioCtx) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AudioContextClass();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    
+    sourceNode = audioCtx.createMediaElementSource(audioElement);
+    sourceNode.connect(analyser);
+    analyser.connect(audioCtx.destination);
+    
+    const bufferLength = analyser.frequencyBinCount;
+    dataArray = new Uint8Array(bufferLength);
+  }
+}
+
+function handleAudioUpload(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  try {
+    const objectUrl = URL.createObjectURL(file);
+    audioElement.src = objectUrl;
+    btnPlay.disabled = false;
+    btnRecord.disabled = false;
+    statusMessage.textContent = `Audio dimuat: ${file.name}`;
+  } catch (error) {
+    statusMessage.textContent = 'Gagal memuat file audio.';
+    console.error('Error loading audio:', error);
+  }
+}
+
+function handleBgUpload(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      bgImage = img;
+    };
+    img.src = e.target?.result || '';
+  };
+  reader.readAsDataURL(file);
+}
+
+function playAudio() {
+  initAudioContext();
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  audioElement.play();
+  btnPlay.disabled = true;
+  btnPause.disabled = false;
+  renderLoop();
+}
+
+function pauseAudio() {
+  audioElement.pause();
+  btnPlay.disabled = false;
+  btnPause.disabled = true;
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+  }
+}
+
+function drawDefaultCanvas() {
+  ctx.fillStyle = '#0f0f15';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawMetadata();
+}
+
+function drawBackground() {
+  if (bgImage) {
+    ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else {
+    ctx.fillStyle = '#0d0e15';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+function drawMetadata() {
+  const title = trackTitleInput.value.trim() || 'Judul Lagu';
+  const artist = artistNameInput.value.trim() || 'Nama Artis';
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+  ctx.shadowBlur = 10;
+
+  ctx.font = 'bold 52px sans-serif';
+  ctx.fillText(title, canvas.width / 2, canvas.height - 220);
+
+  ctx.font = '36px sans-serif';
+  ctx.fillStyle = '#00f0ff';
+  ctx.fillText(artist, canvas.width / 2, canvas.height - 160);
+
+  ctx.restore();
+}
+
+// ==========================================
+// MAIN RENDER LOOP & VISUALIZER ROUTER
+// ==========================================
+function renderLoop() {
+  animationFrameId = requestAnimationFrame(renderLoop);
+
+  if (analyser && dataArray) {
+    analyser.getByteFrequencyData(dataArray);
+  } else {
+    dataArray = new Uint8Array(128).fill(0);
+  }
+
+  drawBackground();
+
+  const style = visualStyleSelect.value;
+
+  switch (style) {
+    // --- 5 GAYA BAWAAN ---
+    case 'bars':
+      renderBars(dataArray);
+      break;
+    case 'circle':
+      renderCircle(dataArray);
+      break;
+    case 'radial':
+      renderRadial(dataArray);
+      break;
+    case 'wave':
+      renderWave(dataArray);
+      break;
+    case 'particles':
+      renderParticles(dataArray);
+      break;
+
+    // --- 5 GAYA BARU (Visual Unik) ---
+    case 'bars-mirrored':
+      renderBarsMirrored(dataArray);
+      break;
+    case 'center-ring':
+      renderCenterRing(dataArray);
+      break;
+    case 'laser-grid':
+      renderLaserGrid(dataArray);
+      break;
+    case 'dna-helix':
+      renderDnaHelix(dataArray);
+      break;
+    case 'matrix-rain':
+      renderMatrixRain(dataArray);
+      break;
+
+    default:
+      renderBars(dataArray);
+      break;
+  }
+
+  drawMetadata();
+}
+
+// ==========================================
+// IMPLEMENTASI ALGORITMA RENDER
+// ==========================================
+
+// 1. Bars (Bawaan)
+function renderBars(data) {
+  const barWidth = (canvas.width / data.length) * 2.5;
+  let x = 0;
+  for (let i = 0; i < data.length; i++) {
+    const barHeight = (data[i] / 255) * (canvas.height / 2);
+    ctx.fillStyle = `hsl(${i * 4}, 100%, 50%)`;
+    ctx.fillRect(x, canvas.height / 2 - barHeight / 2, barWidth - 2, barHeight);
+    x += barWidth;
+  }
+}
+
+// 2. Circle Pulse (Bawaan)
+function renderCircle(data) {
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+  const avg = data.reduce((a, b) => a + b, 0) / data.length;
+  const radius = 150 + (avg / 255) * 120;
+
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = '#00f0ff';
+  ctx.lineWidth = 12;
+  ctx.shadowColor = '#00f0ff';
+  ctx.shadowBlur = 20;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+// 3. Radial Sunburst (Bawaan)
+function renderRadial(data) {
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+  const radius = 180;
+
+  for (let i = 0; i < data.length; i++) {
+    const angle = (i / data.length) * Math.PI * 2;
+    const barLen = (data[i] / 255) * 200;
+    const x1 = centerX + Math.cos(angle) * radius;
+    const y1 = centerY + Math.sin(angle) * radius;
+    const x2 = centerX + Math.cos(angle) * (radius + barLen);
+    const y2 = centerY + Math.sin(angle) * (radius + barLen);
+
+    ctx.strokeStyle = `hsl(${(i / data.length) * 360}, 100%, 50%)`;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+}
+
+// 4. Smooth Wave (Bawaan)
+function renderWave(data) {
+  ctx.beginPath();
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = '#ff007f';
+  const sliceWidth = canvas.width / data.length;
+  let x = 0;
+
+  for (let i = 0; i < data.length; i++) {
+    const v = data[i] / 255.0;
+    const y = (v * canvas.height) / 3 + canvas.height / 3;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+    x += sliceWidth;
+  }
+  ctx.stroke();
+}
+
+// 5. Floating Particles (Bawaan)
+function renderParticles(data) {
+  const avg = data.reduce((a, b) => a + b, 0) / data.length;
+  const speedMultiplier = 1 + (avg / 255) * 5;
+
+  particles.forEach((p, idx) => {
+    p.y -= p.speedY * speedMultiplier;
+    if (p.y < 0) p.y = canvas.height;
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size + (data[idx % data.length] / 255) * 6, 0, Math.PI * 2);
+    ctx.fillStyle = `hsl(${(idx / particles.length) * 360}, 100%, 70%)`;
+    ctx.fill();
+  });
+}
+
+// ------------------------------------------
+// 5 GAYA BARU INDEPENDEN
+// ------------------------------------------
+
+// 6. Symmetrical Dual Spectrum (Kiri-Kanan Simetris)
+function renderBarsMirrored(data) {
+  const halfLen = Math.floor(data.length / 2);
+  const barWidth = (canvas.width / 2) / halfLen;
+  const centerY = canvas.height / 2;
+
+  for (let i = 0; i < halfLen; i++) {
+    const barHeight = (data[i] / 255) * (canvas.height * 0.4);
+    const hue = (i / halfLen) * 180 + 180;
+    ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+
+    // Sisi Kanan
+    ctx.fillRect(canvas.width / 2 + i * barWidth, centerY - barHeight / 2, barWidth - 2, barHeight);
+    // Sisi Kiri (Cermin)
+    ctx.fillRect(canvas.width / 2 - (i + 1) * barWidth, centerY - barHeight / 2, barWidth - 2, barHeight);
+  }
+}
+
+// 7. Concentric Pulse Rings (Lingkaran Berlapis)
+function renderCenterRing(data) {
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+  const ringCount = 5;
+
+  for (let r = 0; r < ringCount; r++) {
+    const dataIndex = Math.floor((r / ringCount) * data.length);
+    const value = data[dataIndex] || 0;
+    const baseRadius = 80 + r * 60;
+    const dynamicRadius = baseRadius + (value / 255) * 50;
+
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, dynamicRadius, 0, Math.PI * 2);
+    ctx.lineWidth = 4 + r * 2;
+    ctx.strokeStyle = `hsl(${r * 50 + 120}, 100%, 50%)`;
+    ctx.shadowColor = `hsl(${r * 50 + 120}, 100%, 50%)`;
+    ctx.shadowBlur = 15;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+}
+
+// 8. Cyberpunk Laser Grid (Garis Laser Perspektif)
+function renderLaserGrid(data) {
+  const bottomY = canvas.height - 300;
+  const horizonY = canvas.height / 2 + 100;
+  const gridLines = 20;
+
+  ctx.strokeStyle = '#ff0055';
+  ctx.lineWidth = 3;
+
+  // Garis Horisontal Perspektif
+  for (let i = 0; i < gridLines; i++) {
+    const val = data[i % data.length] / 255;
+    const y = horizonY + Math.pow(i / gridLines, 2) * (bottomY - horizonY) + (val * 15);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvas.width, y);
+    ctx.stroke();
+  }
+
+  // Garis Vertikal Memancar
+  const vLines = 16;
+  for (let i = 0; i <= vLines; i++) {
+    const xTop = (canvas.width / vLines) * i;
+    const xBottom = (xTop - canvas.width / 2) * 2.5 + canvas.width / 2;
+    ctx.beginPath();
+    ctx.moveTo(xTop, horizonY);
+    ctx.lineTo(xBottom, bottomY);
+    ctx.stroke();
+  }
+}
+
+// 9. Biomorphic DNA Strand (Pilinan DNA Bergerak)
+function renderDnaHelix(data) {
+  const points = 30;
+  const centerY = canvas.height / 2;
+  const spacing = canvas.width / points;
+  const time = Date.now() * 0.003;
+
+  for (let i = 0; i < points; i++) {
+    const val = (data[i % data.length] / 255) * 120;
+    const x = i * spacing;
+    const y1 = centerY + Math.sin(time + i * 0.3) * (60 + val);
+    const y2 = centerY - Math.sin(time + i * 0.3) * (60 + val);
+
+    // Garis Penghubung (Base Pairs)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, y1);
+    ctx.lineTo(x, y2);
+    ctx.stroke();
+
+    // Node Atas
+    ctx.fillStyle = '#00ffaa';
+    ctx.beginPath();
+    ctx.arc(x, y1, 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Node Bawah
+    ctx.fillStyle = '#aa00ff';
+    ctx.beginPath();
+    ctx.arc(x, y2, 8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// 10. Digital Rain Equalizer (Efek Hujan Matrix)
+function renderMatrixRain(data) {
+  ctx.fillStyle = '#00ff66';
+  ctx.font = '24px monospace';
+
+  const colWidth = canvas.width / matrixColumns;
+
+  for (let i = 0; i < matrixColumns; i++) {
+    const val = data[i % data.length] / 255;
+    const char = String.fromCharCode(0x30a0 + Math.floor(Math.random() * 96));
+    const x = i * colWidth;
+    const y = matrixDrops[i] * 30;
+
+    ctx.fillText(char, x, y);
+
+    if (y > canvas.height / 2 + val * 400 || Math.random() > 0.95) {
+      matrixDrops[i] = 0;
+    }
+    matrixDrops[i]++;
+  }
+}
+
+// ==========================================
+// MEDIA RECORDER (Perekaman Video)
+// ==========================================
+function startRecording() {
+  try {
+    recordedChunks = [];
+    const canvasStream = canvas.captureStream(30);
+    const audioDestination = audioCtx.createMediaStreamDestination();
+    sourceNode.connect(audioDestination);
+
+    const combinedStream = new MediaStream([
+      ...canvasStream.getVideoTracks(),
+      ...audioDestination.stream.getAudioTracks()
+    ]);
+
+    mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) recordedChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = downloadVideo;
+
+    mediaRecorder.start();
+    btnRecord.disabled = true;
+    btnStopRecord.disabled = false;
+    statusMessage.textContent = 'Merekam video... Klik Selesai untuk unduh.';
+  } catch (err) {
+    statusMessage.textContent = 'Gagal memulai perekaman video.';
+    console.error('Error starting recording:', err);
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+    btnRecord.disabled = false;
+    btnStopRecord.disabled = true;
+    statusMessage.textContent = 'Memproses video...';
+  }
+}
+
+function downloadVideo() {
+  const blob = new Blob(recordedChunks, { type: 'video/webm' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.style.display = 'none';
+  a.href = url;
+  a.download = `${trackTitleInput.value || 'visualizer'}.webm`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    statusMessage.textContent = 'Video berhasil diunduh!';
+  }, 100);
+}
